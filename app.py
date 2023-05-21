@@ -14,7 +14,7 @@ import pickle
 import os
 import streamlit as st 
 import configparser
-import os
+import tempfile
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -22,7 +22,7 @@ assistant_api_key = config['DEFAULT']['API-KEY']
 
 
 os.environ['OPENAI_API_KEY'] = assistant_api_key
-embeddings = OpenAIEmbeddings()
+embeddings = OpenAIEmbeddings(client=None)
 
 def save(db):
   with open("state_of_the_union.vectorstore.pkl", "wb") as f:
@@ -45,7 +45,7 @@ def create_db():
     return db
 
 # Example usage:
-# db = create_db()
+db = create_db()
 
 def get_docs_from_query(db, query, k=4):
     docs = db.similarity_search(query, k=k)
@@ -57,7 +57,7 @@ def get_response_from_query(query, docs):
     the number of tokens to analyze.
     """
     docs_page_content = " ".join([d.page_content for d in docs])
-    chat = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.7)
+    chat = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.7, client=None)
 
     # Template to use for the system message prompt
     template = """
@@ -84,7 +84,7 @@ def get_response_from_query(query, docs):
     response = response.replace("\n", "")
     return response
 
-db = load()
+# db = load()
 original_docs = "./state_of_the_union.txt"
 
 # App framework
@@ -98,7 +98,10 @@ if uploaded_file is not None:
     if button:
         # create vector db
         st.info('Creating VectorDB...')
-        loader = TextLoader(uploaded_file.name, encoding='utf-8') # TODO: fix this
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file.write(uploaded_file.read())
+            file_path = temp_file.name
+        loader = TextLoader(file_path, encoding='utf-8')
         documents = loader.load()
         text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
         docs = text_splitter.split_documents(documents)
@@ -106,12 +109,12 @@ if uploaded_file is not None:
         db = FAISS.from_documents(docs, embeddings)
 
         # replace vector db
-        db = load()
+        # db = load()
         original_docs = uploaded_file.name
 
         st.info('Done creating VectorDB, use the prompt below to query the db for answers.')
         with st.expander('Loaded txt'): 
-            with open(uploaded_file.name, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 text = f.read()
                 st.info(text)
 
